@@ -1,0 +1,102 @@
+#!/sur/bin/env python
+#-*- coding: utf-8 -*-
+
+import pandas as pd
+import numpy as np
+import statsmodels.api as sm
+from statsmodels.tsa.arima_model import ARMA
+
+expand = 1000.0
+
+def process_data(dataset,freq='D'):
+    dataset =dataset.resample(freq).ffill()
+    dataset = dataset * expand
+    dataset = np.log(dataset)
+    return dataset
+
+def reconver_data(dataset):
+    log_recover = np.exp(dataset)
+    dataset = log_recover / expand
+    return dataset
+
+def predict(dataset,days=3):
+    order = calculate_order(dataset)
+    if order is None:
+        print "Failed forecast, retuen None."
+        return None
+    
+    flag = True
+    success = False
+    
+    p = order[0]
+    q = order[1]
+
+    for i in range(p,-1,-1):
+        if success == True:
+            break
+        for j in range(q,-1,-1):    
+            if success == True:
+                break
+            try:
+                
+                order = (i,j)
+
+                print "ARMA Try ORDER:{0}".format(order)
+                model = ARMA(dataset, order=order)
+                result_arma = model.fit(disp=-1,method='css')
+                success = True
+
+            except  ValueError,msg:
+                print "Error :{0},Order:{1}".format(msg,order)
+
+            except :
+                print "Unknown Error!"
+
+    if success == True :
+        dataset = result_arma.predict(len(dataset), len(dataset) + days, dynamic=True)
+        return dataset
+    else:
+        return None
+
+def calculate_order(dataset):
+    try:    
+        res = sm.tsa.arma_order_select_ic(dataset,ic=['aic','bic'],trend='nc')
+        aic = res.aic_min_order
+        bic = res.bic_min_order
+        print "---------------------"
+        print "AIC:{0},BIC:{1}".format(aic,bic)
+        return aic
+    except IndexError,msg:
+        print msg
+        print "Auto calculate P,Q Failed."
+        return None
+
+def forecast(dataset,delta=3,freq='D'):
+
+    dataset = process_data(dataset,freq)
+    dataset = predict(dataset,delta)
+    if dataset is None:
+        return None
+
+    dataset = reconver_data(dataset)
+    return dataset
+
+
+if __name__=='__main__':
+    dateparse = lambda dates: pd.datetime.strptime(dates, '%m/%d/%Y')
+
+    section = "1"
+    factor = 'DO'
+
+    data = pd.read_csv('../Data/section_' + section + '_day_data.csv', parse_dates=['date'], index_col='date',
+                       date_parser=dateparse)
+
+    tp = data[factor]
+
+    tp_2015 = tp['2015-01-01':'2015-02-28'].interpolate()
+
+    print tp_2015
+    
+    result=forecast(tp_2015)
+
+    # print result
